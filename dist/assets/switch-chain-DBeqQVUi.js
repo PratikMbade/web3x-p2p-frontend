@@ -1,0 +1,1 @@
+import{h,L as e}from"./index-BonWwt-9.js";async function c(t){var n;const{wallet:a,params:i}=t;return((n=a.getChain())==null?void 0:n.id)===h(i[0].chainId)||await a.switchChain(e(h(i[0].chainId))),"0x1"}export{c as handleSwitchChain};
