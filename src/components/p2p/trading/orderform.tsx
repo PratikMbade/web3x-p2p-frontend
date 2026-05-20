@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { Account } from "thirdweb/wallets";
 import { cn } from "~/lib/utils";
@@ -17,6 +17,7 @@ interface OrderFormProps {
   contract:        ethers.Contract | null;
   activeAccount:   Account | null;
   onSuccess?:      () => void;
+  initialSide?:    Side;
 }
 
 type Side = "buy" | "sell";
@@ -29,14 +30,20 @@ export default function OrderForm({
   contract,
   activeAccount,
   onSuccess,
+  initialSide = "buy",
 }: OrderFormProps) {
-  const [side,          setSide]          = useState<Side>("buy");
+  const [side,          setSide]          = useState<Side>(initialSide);
   const [amount,        setAmount]        = useState("");
   const [pricePerToken, setPricePerToken] = useState("");
   const [loading,       setLoading]       = useState(false);
   const [approving,     setApproving]     = useState(false);
   const [error,         setError]         = useState("");
   const [txHash,        setTxHash]        = useState("");
+
+  // Sync side if initialSide prop changes (e.g. sheet reopened with different side)
+  useEffect(() => {
+    setSide(initialSide);
+  }, [initialSide]);
 
   const total = amount && pricePerToken
     ? (parseFloat(amount) * parseFloat(pricePerToken)).toFixed(6)
@@ -98,6 +105,36 @@ export default function OrderForm({
   const sideDim    = isBuy ? "var(--buy-dim)"   : "var(--sell-dim)";
   const sideBorder = isBuy ? "var(--buy-border)" : "var(--sell-border)";
 
+  // ── Submit block (rendered once, repositioned via flex-direction) ──────
+  const submitBlock = (
+    <div
+      className="shrink-0 px-4 py-3 md:py-4"
+      style={{ borderTop: "1px solid var(--border)" }}
+    >
+      <button
+        type="submit"
+        disabled={loading || !contract || !activeAccount}
+        className={cn("p2p-btn-primary", isBuy ? "p2p-btn-buy" : "p2p-btn-sell")}
+      >
+        {approving ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Approving Token…</>
+        ) : loading ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Confirming…</>
+        ) : (
+          <><Zap className="w-4 h-4" /> Place {isBuy ? "Buy" : "Sell"} Order</>
+        )}
+      </button>
+      <p
+        className="text-[10px] text-center leading-relaxed mt-3"
+        style={{ color: "var(--text-ghost)" }}
+      >
+        Orders execute on-chain via smart contract.
+        <br />
+        Approve tokens before filling.
+      </p>
+    </div>
+  );
+
   return (
     <div className="p2p-card h-full flex flex-col" style={{ minHeight: 0 }}>
       {/* Buy / Sell toggle */}
@@ -109,6 +146,7 @@ export default function OrderForm({
           return (
             <button
               key={s}
+              type="button"
               onClick={() => { setSide(s); resetForm(); }}
               className="flex items-center justify-center gap-2 py-4 transition-all"
               style={{
@@ -125,11 +163,19 @@ export default function OrderForm({
         })}
       </div>
 
-      {/* ── ORDER FORM ──────────────────────────────────────────────── */}
-      <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
+      {/* ══════════════════════════════════════════════════════════════
+          ORDER FORM
+          Mobile  (default):    flex-col-reverse → submit at BOTTOM (thumb reach in bottom sheet)
+          Desktop (md+):        flex-col         → submit at TOP    (visible without scrolling)
+      ══════════════════════════════════════════════════════════════ */}
+      <form
+        onSubmit={handleSubmit}
+        className="flex-1 flex flex-col-reverse md:flex-col min-h-0"
+      >
+        {submitBlock}
 
         {/* Scrollable inputs area */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0">
 
           {/* Pair + order type badge */}
           <div className="flex items-center justify-between">
@@ -280,31 +326,6 @@ export default function OrderForm({
               </span>
             </div>
           )}
-        </div>
-
-        {/* Fixed bottom: submit button */}
-        <div className="shrink-0 px-4 pb-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <button
-            type="submit"
-            disabled={loading || !contract || !activeAccount}
-            className={cn("p2p-btn-primary", isBuy ? "p2p-btn-buy" : "p2p-btn-sell")}
-          >
-            {approving ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Approving Token…</>
-            ) : loading ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Confirming…</>
-            ) : (
-              <><Zap className="w-4 h-4" /> Place {isBuy ? "Buy" : "Sell"} Order</>
-            )}
-          </button>
-          <p
-            className="text-[10px] text-center leading-relaxed mt-3"
-            style={{ color: "var(--text-ghost)" }}
-          >
-            Orders execute on-chain via smart contract.
-            <br />
-            Approve tokens before filling.
-          </p>
         </div>
       </form>
     </div>

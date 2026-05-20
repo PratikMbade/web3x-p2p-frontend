@@ -67,7 +67,7 @@ export default function TradingChart({
   className, style,
 }: TradingChartProps) {
   const { theme } = useTheme();
-  const [interval, setIntervalState] = useState<CandleInterval>("1h");
+  const [interval, setIntervalState] = useState<CandleInterval>("15m");
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef          = useRef<IChartApi | null>(null);
   const candleSeriesRef   = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -90,13 +90,14 @@ export default function TradingChart({
     initializedRef.current = true;
     const isDark = theme === "dark";
     const colors = getChartColors(isDark);
+    const isMobile = window.innerWidth < 640;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background:  { type: ColorType.Solid, color: "transparent" },
         textColor:   colors.textColor,
         fontFamily:  "'IBM Plex Mono', 'JetBrains Mono', monospace",
-        fontSize:    11,
+        fontSize:    isMobile ? 10 : 11,
       },
       grid: {
         vertLines: { color: colors.gridColor, style: LineStyle.Dashed },
@@ -108,17 +109,22 @@ export default function TradingChart({
         horzLine: { color: colors.crosshairColor, labelBackgroundColor: colors.crosshairBg },
       },
       rightPriceScale: {
-        borderColor: colors.borderColor,
-        textColor:   colors.textColor,
+        borderColor:    colors.borderColor,
+        textColor:      colors.textColor,
+        scaleMargins:   { top: 0.08, bottom: 0.22 },
+        // Narrower scale on mobile to give candles more room
+        ...(isMobile ? { minimumWidth: 48 } : {}),
       },
       timeScale: {
         borderColor:    colors.borderColor,
         timeVisible:    true,
         secondsVisible: false,
         fixLeftEdge:    true,
+        rightOffset:    isMobile ? 3 : 6,
+        barSpacing:     isMobile ? 4 : 6,
       },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true },
-      handleScale:  { mouseWheel: true, pinch: true },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     });
 
     const candleSeries = chart.addCandlestickSeries({
@@ -149,7 +155,10 @@ export default function TradingChart({
 
     const ro = new ResizeObserver(() => {
       if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+        chart.applyOptions({
+          width:  chartContainerRef.current.clientWidth,
+          height: chartContainerRef.current.clientHeight,
+        });
       }
     });
     ro.observe(chartContainerRef.current);
@@ -175,7 +184,6 @@ export default function TradingChart({
         background: { type: ColorType.Solid, color: "transparent" },
         textColor:  colors.textColor,
         fontFamily: "'IBM Plex Mono', 'JetBrains Mono', monospace",
-        fontSize:   11,
       },
       grid: {
         vertLines: { color: colors.gridColor, style: LineStyle.Dashed },
@@ -197,7 +205,9 @@ export default function TradingChart({
     if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
     candleSeriesRef.current.setData(candles.map(toChartCandle));
     volumeSeriesRef.current.setData(candles.map(toVolBar));
-    chartRef.current?.timeScale().fitContent();
+    const ts = chartRef.current?.timeScale();
+    ts?.fitContent();
+    ts?.scrollToPosition(0, false);
   }, [candles]);
 
   useEffect(() => {
@@ -208,15 +218,113 @@ export default function TradingChart({
 
   const display    = hovered ?? (candles.length > 0 ? candles[candles.length - 1] : null);
   const pairLabel  = tokenOneSymbol && tokenTwoSymbol
-    ? `${tokenOneSymbol} / ${tokenTwoSymbol}`
-    : `${tokenOne.slice(0, 6)}… / ${tokenTwo.slice(0, 6)}…`;
+    ? `${tokenOneSymbol}/${tokenTwoSymbol}`
+    : `${(tokenOne ?? '').slice(0, 6) || '?'}…/${(tokenTwo ?? '').slice(0, 6) || '?'}…`;
   const priceChange = display ? ((display.close - display.open) / display.open) * 100 : 0;
   const isUp = priceChange >= 0;
 
   return (
-    <div className={cn("p2p-card flex flex-col", className)} style={style}>
-      {/* Header */}
-      <div className="p2p-card-header flex-wrap gap-2">
+    <div className={cn("p2p-card flex flex-col overflow-hidden", className)} style={style}>
+
+      {/* ══════════════════════════════════════════════════════════════
+          HEADER — separate mobile/desktop layouts so neither suffers
+      ══════════════════════════════════════════════════════════════ */}
+
+      {/* MOBILE HEADER — stacked, breathing room, no horizontal crush */}
+      <div
+        className="sm:hidden flex flex-col gap-2 px-3 py-2.5 shrink-0"
+        style={{ borderBottom: "1px solid var(--border)" }}
+      >
+        {/* Row 1: pair + price + status */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: "var(--accent-dim)", border: "1px solid var(--accent-glow)" }}
+            >
+              <BarChart2 className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
+            </div>
+            <div className="min-w-0">
+              <p
+                className="text-[11px] font-bold leading-tight truncate"
+                style={{ color: "var(--text)", fontFamily: "'IBM Plex Mono', monospace" }}
+              >
+                {pairLabel}
+              </p>
+              {display && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span
+                    className="text-sm font-bold leading-none"
+                    style={{
+                      color: isUp ? "var(--buy)" : "var(--sell)",
+                      fontFamily: "'IBM Plex Mono', monospace",
+                    }}
+                  >
+                    {fmt(display.close, 4)}
+                  </span>
+                  <span
+                    className="flex items-center gap-0.5 text-[10px] font-semibold leading-none"
+                    style={{ color: isUp ? "var(--buy)" : "var(--sell)" }}
+                  >
+                    {isUp ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                    {isUp ? "+" : ""}{priceChange.toFixed(2)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* WS status — icon only on mobile */}
+          <div
+            className="flex items-center justify-center w-7 h-7 rounded-lg border shrink-0"
+            style={{
+              background: status === "connected"  ? "var(--buy-dim)"
+                        : status === "connecting" ? "var(--accent-dim)"
+                        :                          "var(--sell-dim)",
+              borderColor: status === "connected"  ? "var(--buy-border)"
+                         : status === "connecting" ? "var(--accent-glow)"
+                         :                          "var(--sell-border)",
+              color: status === "connected"  ? "var(--buy)"
+                   : status === "connecting" ? "var(--accent)"
+                   :                          "var(--sell)",
+            }}
+            title={status}
+          >
+            {status === "connected"  ? <Wifi    className="w-3.5 h-3.5" /> :
+             status === "connecting" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
+                                       <WifiOff className="w-3.5 h-3.5" />}
+          </div>
+        </div>
+
+        {/* Row 2: interval selector — full width, horizontal scroll if needed */}
+        <div
+          className="flex items-center rounded-lg p-0.5 gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+        >
+          {INTERVALS.map((iv) => {
+            const isActive = interval === iv.value;
+            return (
+              <button
+                key={iv.value}
+                onClick={() => setIntervalState(iv.value)}
+                className="flex-1 min-w-[40px] py-1.5 rounded-md text-[10px] font-bold tracking-wide transition-all shrink-0"
+                style={{
+                  background: isActive ? "var(--accent)" : "transparent",
+                  color: isActive ? "#000" : "var(--text-muted)",
+                }}
+              >
+                {iv.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* DESKTOP HEADER — original single-row layout */}
+      <div
+        className="hidden md:flex items-center justify-between py-3 px-4 flex-wrap gap-2 shrink-0"
+        style={{ borderBottom: "1px solid var(--border)", background: "rgba(255,255,255,0.01)" }}
+      >
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {/* Pair + price */}
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -278,7 +386,7 @@ export default function TradingChart({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {/* WS status */}
           <div
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-bold tracking-wide border"
@@ -297,9 +405,7 @@ export default function TradingChart({
             {status === "connected"  ? <Wifi    className="w-3 h-3" /> :
              status === "connecting" ? <Loader2 className="w-3 h-3 animate-spin" /> :
                                        <WifiOff className="w-3 h-3" />}
-            <span className="hidden sm:inline">
-              {status === "connected" ? "LIVE" : status === "connecting" ? "…" : "OFF"}
-            </span>
+            <span>{status === "connected" ? "LIVE" : status === "connecting" ? "…" : "OFF"}</span>
           </div>
 
           {/* Interval selector */}
@@ -313,7 +419,7 @@ export default function TradingChart({
                 <button
                   key={iv.value}
                   onClick={() => setIntervalState(iv.value)}
-                  className="px-2 sm:px-2.5 py-1.5 rounded-md text-[10px] font-bold tracking-wide transition-all"
+                  className="px-2.5 py-1.5 rounded-md text-[10px] font-bold tracking-wide transition-all"
                   style={{
                     background: isActive ? "var(--accent)" : "transparent",
                     color: isActive ? "#000" : "var(--text-muted)",
@@ -327,7 +433,9 @@ export default function TradingChart({
         </div>
       </div>
 
-      {/* Chart canvas */}
+      {/* ══════════════════════════════════════════════════════════════
+          CHART CANVAS
+      ══════════════════════════════════════════════════════════════ */}
       <div className="relative flex-1 min-h-0">
         {candles.length === 0 && (
           <div
@@ -357,7 +465,7 @@ export default function TradingChart({
         <div
           ref={chartContainerRef}
           className="w-full h-full"
-          style={{ minHeight: "240px" }}
+          style={{ minHeight: 0 }}
         />
       </div>
     </div>
